@@ -26,9 +26,12 @@ export default async function handler(req, res) {
       smart_format: true,
     });
 
-    const transcript =
-      dgRes.results.channels[0].alternatives[0].transcript || "";
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: "Transcription failed." });
+    }
 
+    const transcript = result.results.channels[0].alternatives[0].transcript;
     return res.status(200).json({ transcript });
   } catch (err) {
     console.error(err);
