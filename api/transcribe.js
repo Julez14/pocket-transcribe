@@ -1,76 +1,36 @@
 // api/transcribe.js
 import { createClient } from "@deepgram/sdk";
-import formidable from "formidable";
-import fs from "fs";
 
 export const config = {
-  api: {
-    bodyParser: false, // we’ll use formidable
-  },
+  api: { bodyParser: false },
 };
 
 export default async function handler(req, res) {
-  console.log("Received request with method:", req.method); // Debug
-
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
-    console.log("Method not allowed:", req.method); // Debug
-    return res.status(405).end(`Method ${req.method} Not Allowed`);
+    return res.status(405).end();
   }
+  try {
+    // collect raw chunks
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+    const mimeType = req.headers["content-type"] || "audio/webm";
 
-  const deepgramKey = process.env.DEEPGRAM_API_KEY;
-  if (!deepgramKey) {
-    console.error("Deepgram API key not configured."); // Debug
-    return res.status(500).json({ error: "Deepgram API key not configured." });
+    const dg = createClient(process.env.DEEPGRAM_API_KEY);
+    const dgRes = await dg.transcription.preRecorded(
+      { buffer, mimetype: mimeType },
+      { model: "nova-3", punctuate: true, smart_format: true }
+    );
+
+    const transcript =
+      dgRes.results.channels[0].alternatives[0].transcript || "";
+
+    return res.status(200).json({ transcript });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Transcription failed." });
   }
-  console.log("Deepgram API key is available."); // Debug
-
-  const dgClient = createClient(deepgramKey);
-
-  // create a parser instance with any options you need
-  const form = formidable({
-    keepExtensions: true, // e.g. preserve file extensions
-    maxFileSize: 200 * 1024 * 1024, // optional size limit
-  });
-  console.log("Parsing form data..."); // Debug
-  form.parse(req, async (err, fields, files) => {
-    if (err) {
-      console.error("Form parse error:", err); // Debug
-      return res.status(400).json({ error: "Invalid form data." });
-    }
-
-    console.log("Form fields:", fields); // Debug
-    console.log("Form files:", files); // Debug
-
-    const audioFile = files.audio;
-    if (!audioFile) {
-      console.error("No audio file provided."); // Debug
-      return res.status(400).json({ error: "No audio file provided." });
-    }
-
-    try {
-      console.log("Reading uploaded file from:", audioFile.filepath); // Debug
-      const buffer = await fs.promises.readFile(audioFile.filepath);
-
-      console.log("Sending file to Deepgram for transcription..."); // Debug
-      const dgRes = await dgClient.transcription.preRecorded(
-        { buffer, mimetype: audioFile.mimetype },
-        {
-          model: "nova-3",
-          punctuate: true,
-          smart_format: true,
-        }
-      );
-
-      const transcript =
-        dgRes.results.channels[0].alternatives[0].transcript || "";
-
-      console.log("Transcription successful. Transcript:", transcript); // Debug
-
-      return res.status(200).json({ transcript });
-    } catch (dgErr) {
-      console.error("Deepgram error:", dgErr); // Debug
-      return res.status(500).json({ error: "Transcription failed." });
-    }
-  });
 }
