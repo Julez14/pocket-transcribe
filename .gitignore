@@ -27,3 +27,4 @@ dist-ssr
 # Ignore SSH key files
 pocket-transcribe
 pocket-transcribe.pub
+.vercel

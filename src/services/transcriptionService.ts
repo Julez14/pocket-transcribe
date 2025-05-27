@@ -6,27 +6,28 @@ const TRANSCRIPTION_SERVICE_URL = "/api/transcribe";
 export async function transcribeAudio(audioBlob: Blob): Promise<string> {
   try {
     // For demo purposes - simulate transcription with a delay
-    // In a real implementation, you would send the audio to your proxy endpoint
-
     if (process.env.NODE_ENV === "development") {
-      // Simulate transcription in development
+      console.log("Simulating transcription in development..."); // Debug
       return new Promise((resolve) => {
         setTimeout(() => {
-          resolve(
-            "This is a simulated transcript of your recorded audio. In a production environment, this would be the actual transcribed text from your audio recording."
-          );
+          const simulatedTranscript =
+            "This is a simulated transcript of your recorded audio. In a production environment, this would be the actual transcribed text from your audio recording.";
+          console.log("Simulated transcript:", simulatedTranscript); // Debug
+          resolve(simulatedTranscript);
         }, 3000); // Simulate 3 second processing time
       });
     }
 
-    // Create a FormData object to send the audio file
+    console.log("Creating FormData for audio file..."); // Debug
     const formData = new FormData();
     formData.append("audio", audioBlob, "recording.webm");
 
-    // Send the audio to the transcription service
+    console.log("Sending audio to transcription service..."); // Debug
     const response = await axios.post(TRANSCRIPTION_SERVICE_URL, formData, {
       timeout: 300_000, // 5 min
     });
+
+    console.log("Received response from transcription service:", response.data); // Debug
 
     if (response.status !== 200) {
       throw new Error(`Transcription failed with status: ${response.status}`);
@@ -34,7 +35,7 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
 
     return response.data.transcript;
   } catch (error) {
-    console.error("Error transcribing audio:", error);
+    console.error("Error transcribing audio:", error); // Debug
     throw new Error("Failed to transcribe audio. Please try again.");
   }
 }
