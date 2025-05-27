@@ -92,8 +92,7 @@ export function useAudioRecorder() {
       };
 
       mediaRecorder.onstop = () => {
-        // If we're still recording, create a segment and start a new one
-        if (state.isRecording && !state.isPaused) {
+        if (chunksRef.current.length > 0) {
           const currentTime = Date.now();
           const segment: RecordingSegment = {
             blob: new Blob(chunksRef.current, { type: 'audio/webm' }),
@@ -101,13 +100,11 @@ export function useAudioRecorder() {
             endTime: currentTime - startTimeRef.current,
           };
           segmentsRef.current.push(segment);
-          
-          // Reset for next segment
           chunksRef.current = [];
-          segmentStartTimeRef.current = currentTime;
           
-          // Start a new recording segment if we're still recording
-          if (mediaRecorderRef.current && state.isRecording && !state.isPaused) {
+          // Only start a new segment if we're still actively recording
+          if (state.isRecording && !state.isPaused && mediaRecorderRef.current) {
+            segmentStartTimeRef.current = currentTime;
             mediaRecorderRef.current.start();
           }
         }
@@ -169,7 +166,9 @@ export function useAudioRecorder() {
   const stopRecording = useCallback(() => {
     if (!state.isRecording) return;
 
+    // Request the final data from the media recorder
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.requestData(); // Request any remaining data
       mediaRecorderRef.current.stop();
     }
 
