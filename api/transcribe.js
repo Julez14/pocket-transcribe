@@ -27,7 +27,11 @@ export default async function handler(req, res) {
 
   const dgClient = createClient(deepgramKey);
 
-  const form = new formidable.IncomingForm();
+  // create a parser instance with any options you need
+  const form = formidable({
+    keepExtensions: true, // e.g. preserve file extensions
+    maxFileSize: 200 * 1024 * 1024, // optional size limit
+  });
   console.log("Parsing form data..."); // Debug
   form.parse(req, async (err, fields, files) => {
     if (err) {
