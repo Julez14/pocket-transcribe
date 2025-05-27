@@ -230,8 +230,7 @@ function App() {
 
       <footer className="bg-white p-4 text-center text-gray-500 text-xs">
         <p>
-          &copy; {new Date().getFullYear()} Pocket Transcribe. All rights
-          reserved.
+          &copy; {new Date().getFullYear()} Julian Laxman. All rights reserved.
         </p>
       </footer>
     </div>
