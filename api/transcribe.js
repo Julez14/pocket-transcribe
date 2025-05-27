@@ -20,10 +20,11 @@ export default async function handler(req, res) {
     const mimeType = req.headers["content-type"] || "audio/webm";
 
     const dg = createClient(process.env.DEEPGRAM_API_KEY);
-    const dgRes = await dg.transcription.preRecorded(
-      { buffer, mimetype: mimeType },
-      { model: "nova-3", punctuate: true, smart_format: true }
-    );
+    const dgRes = await dg.listen.prerecorded.transcribeFileCallback(buffer, {
+      model: "nova-3",
+      punctuate: true,
+      smart_format: true,
+    });
 
     const transcript =
       dgRes.results.channels[0].alternatives[0].transcript || "";
