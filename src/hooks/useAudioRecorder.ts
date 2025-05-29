@@ -109,9 +109,12 @@ export function useAudioRecorder() {
       mediaRecorder.onstop = () => {
         console.log(
           "[onstop] Handler called, isStoppingRef:",
-          isStoppingRef.current
+          isStoppingRef.current,
+          "chunks:",
+          chunksRef.current.length
         );
 
+        // Process the current chunk into a segment
         if (chunksRef.current.length > 0) {
           const currentTime = Date.now();
           const segment: RecordingSegment = {
@@ -121,11 +124,58 @@ export function useAudioRecorder() {
           };
           segmentsRef.current.push(segment);
           chunksRef.current = [];
+          console.log(
+            "[onstop] Added segment, total segments:",
+            segmentsRef.current.length
+          );
+        } else {
+          console.log("[onstop] No chunks available yet");
         }
 
         // If we're stopping the recording completely, resolve the promise
         if (isStoppingRef.current && stopPromiseResolveRef.current) {
-          console.log("[onstop] Resolving stop promise");
+          console.log(
+            "[onstop] Resolving stop promise with segments:",
+            segmentsRef.current.length
+          );
+
+          // If we have no segments but were recording, wait a bit for data to arrive
+          if (segmentsRef.current.length === 0) {
+            console.log("[onstop] No segments yet, waiting for data...");
+            // Set a timeout to wait for ondataavailable
+            setTimeout(() => {
+              if (chunksRef.current.length > 0) {
+                console.log(
+                  "[onstop] Found delayed chunks:",
+                  chunksRef.current.length
+                );
+                const currentTime = Date.now();
+                const segment: RecordingSegment = {
+                  blob: new Blob(chunksRef.current, { type: "audio/webm" }),
+                  startTime: segmentStartTimeRef.current - startTimeRef.current,
+                  endTime: currentTime - startTimeRef.current,
+                };
+                segmentsRef.current.push(segment);
+                chunksRef.current = [];
+              }
+
+              cleanup();
+              setState((prevState) => ({
+                ...prevState,
+                isRecording: false,
+                isPaused: false,
+                hasRecording: true,
+              }));
+
+              if (stopPromiseResolveRef.current) {
+                stopPromiseResolveRef.current();
+                stopPromiseResolveRef.current = null;
+              }
+              isStoppingRef.current = false;
+            }, 100);
+            return;
+          }
+
           cleanup();
           setState((prevState) => ({
             ...prevState,
@@ -133,9 +183,15 @@ export function useAudioRecorder() {
             isPaused: false,
             hasRecording: true,
           }));
-          stopPromiseResolveRef.current();
-          stopPromiseResolveRef.current = null;
-          isStoppingRef.current = false;
+
+          // Use setTimeout to ensure state updates are processed before resolving
+          setTimeout(() => {
+            if (stopPromiseResolveRef.current) {
+              stopPromiseResolveRef.current();
+              stopPromiseResolveRef.current = null;
+            }
+            isStoppingRef.current = false;
+          }, 0);
           return;
         }
 
@@ -233,8 +289,19 @@ export function useAudioRecorder() {
         mediaRecorderRef.current.state === "recording"
       ) {
         console.log("[stopRecording] Stopping active MediaRecorder");
-        mediaRecorderRef.current.requestData(); // Request any remaining data
-        mediaRecorderRef.current.stop();
+
+        // Request data first, then stop after a small delay
+        mediaRecorderRef.current.requestData();
+
+        // Give a moment for requestData to work, then stop
+        setTimeout(() => {
+          if (
+            mediaRecorderRef.current &&
+            mediaRecorderRef.current.state === "recording"
+          ) {
+            mediaRecorderRef.current.stop();
+          }
+        }, 50);
       } else {
         console.log(
           "[stopRecording] MediaRecorder not active, resolving immediately"
@@ -256,11 +323,20 @@ export function useAudioRecorder() {
 
   // Get the final combined audio blob
   const getAudioBlob = useCallback((): Blob | null => {
-    if (segmentsRef.current.length === 0) return null;
+    console.log(
+      "[getAudioBlob] Called with segments:",
+      segmentsRef.current.length
+    );
+    if (segmentsRef.current.length === 0) {
+      console.log("[getAudioBlob] No segments found");
+      return null;
+    }
 
     // Combine all segment blobs
     const blobs = segmentsRef.current.map((segment) => segment.blob);
-    return new Blob(blobs, { type: "audio/webm" });
+    const combinedBlob = new Blob(blobs, { type: "audio/webm" });
+    console.log("[getAudioBlob] Created blob with size:", combinedBlob.size);
+    return combinedBlob;
   }, []);
 
   // Reset the recorder state

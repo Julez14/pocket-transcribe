@@ -80,6 +80,9 @@ function App() {
       await stopRecording();
       console.log("Recording stopped successfully");
 
+      // Small delay to ensure all processing is complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       const audioBlob = getAudioBlob();
       if (!audioBlob) {
         setError("No recording found. Please try again.");
