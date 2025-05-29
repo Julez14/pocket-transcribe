@@ -70,11 +70,15 @@ function App() {
   };
 
   const handleStopRecording = async () => {
+    console.log("Stopping recording...");
     setAppState("processing");
+    console.log("App sate set to processing");
 
     try {
       // Wait for recording to be fully stopped and processed
+      console.log("Calling stopRecording...");
       await stopRecording();
+      console.log("Recording stopped successfully");
 
       const audioBlob = getAudioBlob();
       if (!audioBlob) {
@@ -83,6 +87,7 @@ function App() {
         return;
       }
 
+      console.log("Audio recording ready for transcription:", audioBlob);
       await startTranscription(audioBlob);
       setAppState("result");
     } catch (error) {

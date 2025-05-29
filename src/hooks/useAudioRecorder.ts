@@ -24,6 +24,7 @@ export function useAudioRecorder() {
   const segmentStartTimeRef = useRef<number>(0);
   const currentSegmentDurationRef = useRef<number>(0);
   const stopPromiseResolveRef = useRef<(() => void) | null>(null);
+  const isStoppingRef = useRef<boolean>(false);
 
   // Clean up function to stop recording and release resources
   const cleanup = useCallback(() => {
@@ -49,34 +50,38 @@ export function useAudioRecorder() {
 
   // Update timer during recording
   const updateTimer = useCallback(() => {
-    if (!state.isRecording || state.isPaused) return;
+    setState((prevState) => {
+      if (!prevState.isRecording || prevState.isPaused) return prevState;
 
-    const currentTime = Date.now();
-    const elapsedTime =
-      currentTime - startTimeRef.current - pausedTimeRef.current;
+      const currentTime = Date.now();
+      const elapsedTime =
+        currentTime - startTimeRef.current - pausedTimeRef.current;
 
-    setState((prevState) => ({
-      ...prevState,
-      recordingTime: elapsedTime,
-    }));
+      // Update current segment duration
+      currentSegmentDurationRef.current =
+        currentTime - segmentStartTimeRef.current;
 
-    // Update current segment duration
-    currentSegmentDurationRef.current =
-      currentTime - segmentStartTimeRef.current;
+      // Check if we need to start a new segment (only if not stopping)
+      if (
+        !isStoppingRef.current &&
+        currentSegmentDurationRef.current >= SEGMENT_DURATION &&
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state === "recording"
+      ) {
+        mediaRecorderRef.current.stop();
+      }
 
-    // Check if we need to start a new segment
-    if (
-      currentSegmentDurationRef.current >= SEGMENT_DURATION &&
-      mediaRecorderRef.current
-    ) {
-      mediaRecorderRef.current.stop();
-    }
+      // Warn user when approaching maximum recording time
+      if (elapsedTime >= MAX_RECORDING_TIME * 0.9) {
+        console.warn("Approaching maximum recording time limit");
+      }
 
-    // Warn user when approaching maximum recording time
-    if (elapsedTime >= MAX_RECORDING_TIME * 0.9) {
-      console.warn("Approaching maximum recording time limit");
-    }
-  }, [state.isRecording, state.isPaused]);
+      return {
+        ...prevState,
+        recordingTime: elapsedTime,
+      };
+    });
+  }, []);
 
   // Start the recording process
   const startRecording = useCallback(async () => {
@@ -93,6 +98,7 @@ export function useAudioRecorder() {
       pausedTimeRef.current = 0;
       segmentStartTimeRef.current = Date.now();
       currentSegmentDurationRef.current = 0;
+      isStoppingRef.current = false;
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -101,6 +107,11 @@ export function useAudioRecorder() {
       };
 
       mediaRecorder.onstop = () => {
+        console.log(
+          "[onstop] Handler called, isStoppingRef:",
+          isStoppingRef.current
+        );
+
         if (chunksRef.current.length > 0) {
           const currentTime = Date.now();
           const segment: RecordingSegment = {
@@ -110,30 +121,38 @@ export function useAudioRecorder() {
           };
           segmentsRef.current.push(segment);
           chunksRef.current = [];
+        }
 
-          // Check if we're stopping the recording completely
-          if (stopPromiseResolveRef.current) {
-            cleanup();
-            setState((prevState) => ({
-              ...prevState,
-              isRecording: false,
-              isPaused: false,
-              hasRecording: true,
-            }));
-            stopPromiseResolveRef.current();
-            stopPromiseResolveRef.current = null;
-            return;
-          }
+        // If we're stopping the recording completely, resolve the promise
+        if (isStoppingRef.current && stopPromiseResolveRef.current) {
+          console.log("[onstop] Resolving stop promise");
+          cleanup();
+          setState((prevState) => ({
+            ...prevState,
+            isRecording: false,
+            isPaused: false,
+            hasRecording: true,
+          }));
+          stopPromiseResolveRef.current();
+          stopPromiseResolveRef.current = null;
+          isStoppingRef.current = false;
+          return;
+        }
 
-          // Only start a new segment if we're still actively recording
-          if (
-            state.isRecording &&
-            !state.isPaused &&
-            mediaRecorderRef.current
-          ) {
-            segmentStartTimeRef.current = currentTime;
-            mediaRecorderRef.current.start();
-          }
+        // Only start a new segment if we're still actively recording and not stopping
+        if (!isStoppingRef.current) {
+          setState((currentState) => {
+            if (
+              currentState.isRecording &&
+              !currentState.isPaused &&
+              mediaRecorderRef.current
+            ) {
+              console.log("[onstop] Starting new segment");
+              segmentStartTimeRef.current = Date.now();
+              mediaRecorderRef.current.start();
+            }
+            return currentState;
+          });
         }
       };
 
@@ -155,7 +174,7 @@ export function useAudioRecorder() {
           "Failed to start recording. Please check microphone permissions.",
       }));
     }
-  }, [updateTimer, state.isRecording, state.isPaused]);
+  }, [updateTimer, cleanup]);
 
   // Pause the recording
   const pauseRecording = useCallback(() => {
@@ -195,11 +214,16 @@ export function useAudioRecorder() {
 
   // Stop the recording and finalize - now returns a Promise
   const stopRecording = useCallback((): Promise<void> => {
+    console.log("[useAudioRecorder] stopRecording called");
     return new Promise((resolve) => {
       if (!state.isRecording) {
+        console.log("[stopRecording] Not recording, resolving immediately");
         resolve();
         return;
       }
+
+      // Set the stopping flag to prevent new segments from starting
+      isStoppingRef.current = true;
 
       // Store the resolve function to be called when recording is fully stopped
       stopPromiseResolveRef.current = resolve;
@@ -208,9 +232,13 @@ export function useAudioRecorder() {
         mediaRecorderRef.current &&
         mediaRecorderRef.current.state === "recording"
       ) {
+        console.log("[stopRecording] Stopping active MediaRecorder");
         mediaRecorderRef.current.requestData(); // Request any remaining data
         mediaRecorderRef.current.stop();
       } else {
+        console.log(
+          "[stopRecording] MediaRecorder not active, resolving immediately"
+        );
         // If not currently recording, resolve immediately
         cleanup();
         setState((prevState) => ({
@@ -220,6 +248,7 @@ export function useAudioRecorder() {
           hasRecording: true,
         }));
         stopPromiseResolveRef.current = null;
+        isStoppingRef.current = false;
         resolve();
       }
     });
@@ -240,6 +269,7 @@ export function useAudioRecorder() {
     chunksRef.current = [];
     segmentsRef.current = [];
     stopPromiseResolveRef.current = null;
+    isStoppingRef.current = false;
 
     setState({
       isRecording: false,
