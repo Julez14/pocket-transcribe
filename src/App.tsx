@@ -39,19 +39,7 @@ function App() {
     resetTranscription,
   } = useTranscription();
 
-  // Check if user has already granted microphone permission
-  useEffect(() => {
-    if (appState === "landing") {
-      navigator.mediaDevices
-        .getUserMedia({ audio: true })
-        .then(() => {
-          // Permission already granted
-        })
-        .catch(() => {
-          // Permission not yet granted or denied
-        });
-    }
-  }, [appState]);
+  // Removed the useEffect that automatically checks for microphone permission on landing
 
   const handleRequestPermission = async () => {
     try {
